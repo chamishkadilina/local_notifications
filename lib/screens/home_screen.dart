@@ -14,8 +14,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool isEnabled = false;
-  TimeOfDay selectedTime = TimeOfDay.now();
+  TimeOfDay selectedTime =
+      const TimeOfDay(hour: 5, minute: 0); // Default 5:00 AM
   List<bool> selectedDays = List.generate(7, (_) => true);
+  bool hasPermission = false;
 
   @override
   void initState() {
@@ -27,13 +29,48 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       isEnabled = prefs.getBool('notificationsEnabled') ?? false;
-      final hour = prefs.getInt('notificationHour') ?? TimeOfDay.now().hour;
-      final minute =
-          prefs.getInt('notificationMinute') ?? TimeOfDay.now().minute;
+      final hour = prefs.getInt('notificationHour') ?? 5; // Default to 5
+      final minute = prefs.getInt('notificationMinute') ?? 0; // Default to 00
       selectedTime = TimeOfDay(hour: hour, minute: minute);
       selectedDays = List.generate(
           7, (index) => prefs.getBool('notificationDay$index') ?? true);
     });
+  }
+
+  Future<void> _requestPermissionAndSave(bool value) async {
+    if (value && !hasPermission) {
+      hasPermission = await NotificationService().requestPermissions();
+      if (!hasPermission) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: const Text('Notifications Required'),
+                content: const Text(
+                    'Please enable notifications in your system settings to use this feature.'),
+                actions: [
+                  TextButton(
+                    child: const Text('OK'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        }
+        setState(() {
+          isEnabled = false;
+        });
+        return;
+      }
+    }
+    setState(() {
+      isEnabled = value && hasPermission;
+    });
+    _saveSettings();
   }
 
   Future<void> _saveSettings() async {
@@ -69,12 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
             SwitchListTile(
               title: const Text('Enable Daily Reminders'),
               value: isEnabled,
-              onChanged: (bool value) {
-                setState(() {
-                  isEnabled = value;
-                });
-                _saveSettings();
-              },
+              onChanged: (bool value) => _requestPermissionAndSave(value),
             ),
             if (isEnabled) ...[
               const SizedBox(height: 16),

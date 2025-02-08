@@ -1,18 +1,23 @@
 // lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'notification_service.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
-  // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize notifications
-  await NotificationService().initNotification();
+  // Initialize notifications and get permission status
+  final hasPermission = await NotificationService().initNotification();
 
   // Initialize SharedPreferences
-  await SharedPreferences.getInstance();
+  final prefs = await SharedPreferences.getInstance();
+
+  // If no permission, ensure notifications are disabled
+  if (!hasPermission) {
+    await prefs.setBool('notificationsEnabled', false);
+  }
 
   runApp(const MyApp());
 }

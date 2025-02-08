@@ -1,4 +1,3 @@
-// lib/notification_service.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -13,26 +12,95 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  Future<void> initNotification() async {
+  Future<bool> initNotification() async {
     tz.initializeTimeZones();
 
     const AndroidInitializationSettings androidInitSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const InitializationSettings initSettings =
-        InitializationSettings(android: androidInitSettings);
+    const DarwinInitializationSettings iosInitSettings =
+        DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidInitSettings,
+      iOS: iosInitSettings,
+    );
 
     await _notificationsPlugin.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (details) {},
+      onDidReceiveNotificationResponse: (details) {
+        // Handle notification tap
+      },
     );
 
+    // Check current permission status
     if (Platform.isAndroid) {
       final androidPlugin =
           _notificationsPlugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
-      await androidPlugin?.requestNotificationsPermission();
+      final bool? granted =
+          await androidPlugin?.requestNotificationsPermission();
+      return granted ?? false;
+    } else if (Platform.isIOS) {
+      final iosPlugin =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+      final bool? granted = await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return granted ?? false;
     }
+    return false;
+  }
+
+  Future<bool> requestPermissions() async {
+    if (Platform.isAndroid) {
+      final androidPlugin =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      final bool? granted =
+          await androidPlugin?.requestNotificationsPermission();
+      return granted ?? false;
+    } else if (Platform.isIOS) {
+      final iosPlugin =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+      final bool? granted = await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return granted ?? false;
+    }
+    return false;
+  }
+
+  Future<bool?> checkPermissions() async {
+    if (Platform.isAndroid) {
+      final androidPlugin =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      final bool? granted =
+          await androidPlugin?.areNotificationsEnabled() ?? false;
+      return granted;
+    } else if (Platform.isIOS) {
+      final iosPlugin =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+      final bool? granted = await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return granted ?? false;
+    }
+    return false;
   }
 
   NotificationDetails _notificationDetails() {
@@ -43,7 +111,32 @@ class NotificationService {
         channelDescription: 'Daily practice reminder notifications',
         importance: Importance.max,
         priority: Priority.high,
+        enableVibration: true,
+        playSound: true,
+        icon: '@mipmap/ic_launcher',
+        largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
+        channelShowBadge: true,
+        enableLights: true,
       ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        sound: 'default',
+        badgeNumber: 1,
+      ),
+    );
+  }
+
+  Future<void> showInstantNotification({
+    required String title,
+    required String body,
+  }) async {
+    await _notificationsPlugin.show(
+      0,
+      title,
+      body,
+      _notificationDetails(),
     );
   }
 
@@ -73,9 +166,25 @@ class NotificationService {
 
   DateTime _nextDayOfWeek(int dayOfWeek, TimeOfDay time) {
     DateTime date = DateTime.now();
+
+    // If today is the target day and the time hasn't passed, use today
+    if (date.weekday == dayOfWeek &&
+        (date.hour < time.hour ||
+            (date.hour == time.hour && date.minute < time.minute))) {
+      return DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+    }
+
+    // Otherwise, find the next occurrence of the day
     while (date.weekday != dayOfWeek) {
       date = date.add(const Duration(days: 1));
     }
+
     return DateTime(
       date.year,
       date.month,
@@ -83,6 +192,14 @@ class NotificationService {
       time.hour,
       time.minute,
     );
+  }
+
+  Future<List<PendingNotificationRequest>> getPendingNotifications() async {
+    return await _notificationsPlugin.pendingNotificationRequests();
+  }
+
+  Future<void> cancelNotification(int id) async {
+    await _notificationsPlugin.cancel(id);
   }
 
   Future<void> cancelAllNotifications() async {
